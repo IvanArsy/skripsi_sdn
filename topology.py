@@ -1,28 +1,45 @@
-from mininet.net import Mininet
-from mininet.node import RemoteController, OVSSwitch
-from mininet.cli import CLI
-from mininet.log import setLogLevel
+from mininet.topo import Topo
 
-def myNetwork():
-    net = Mininet(topo=None, build=False, ipBase='10.0.0.0/8')
+class PartialMeshTopo( Topo ):
+    "Topologi 5x6 Partial Mesh dengan 5 Host per Switch"
 
-    print('--Adding Controller--')
-    net.addController(name='c0', controller=RemoteController, ip='127.0.0.1', port=6633)
+    def build( self ):
+        rows = 5
+        cols = 6
+        hosts_per_switch = 5
+        
+        switches = {}
+        host_counter = 1
+        switch_counter = 1
 
-    print('--Adding Host and Switches--')
-    h1 = net.addHost('h1', ip='10.0.0.1')
-    h2 = net.addHost('h2', ip='10.0.0.2')
-    s1 = net.addSwitch('s1', cls=OVSSwitch, protocols='OpenFlow13')
+        for r in range(rows):
+            for c in range(cols):
+                s_name = f's{switch_counter}'
+                s = self.addSwitch(s_name)
+                switches[(r, c)] = s
+                switch_counter += 1
+                
+                for h in range(hosts_per_switch):
+                    h_name = f'h{host_counter}'
+                    host = self.addHost(h_name)
+                    self.addLink(host, s)
+                    host_counter += 1
 
-    print('--Creating Links--')
-    net.addLink(h1, s1)
-    net.addLink(h2, s1)
 
-    print('--Starting Network--')
-    net.start()
-    CLI(net)
-    net.stop()
+        for r in range(rows):
+            for c in range(cols):
+                current_switch = switches[(r, c)]
+                
+                if c + 1 < cols:
+                    east_switch = switches[(r, c + 1)]
+                    self.addLink(current_switch, east_switch)
+                    
+                if r + 1 < rows:
+                    south_switch = switches[(r + 1, c)]
+                    self.addLink(current_switch, south_switch)
+                    
+                if r + 1 < rows and c + 1 < cols:
+                    se_switch = switches[(r + 1, c + 1)]
+                    self.addLink(current_switch, se_switch)
 
-if __name__ == '__main__':
-    setLogLevel('info')
-    myNetwork()
+topos = { 'mytopo': ( lambda: PartialMeshTopo() ) }
