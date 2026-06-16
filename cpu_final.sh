@@ -1,2 +1,0 @@
-#!/bin/bash
-awk '{id=$8; load=100-id; sum+=load; if(load>max) max=load} END {printf "\n=== KESIMPULAN BEBAN CPU ===\nTotal Waktu   : %d Detik\nRata-rata Load: %.2f %%\nLoad Tertinggi: %.2f %%\n============================\n", NR, sum/NR, max}' log_cpu_usage.txt

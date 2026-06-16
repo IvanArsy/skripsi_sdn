@@ -1,0 +1,1 @@
+ryu-manager --verbose main_controller.py ryu.topology.switches --observe-links

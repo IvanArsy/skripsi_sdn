@@ -3,6 +3,7 @@ from mininet.topo import Topo
 class PartialMeshTopo( Topo ):
     "Topologi 5x6 Edge-Core - 50 Pengirim (Kiri) & 50 Penerima (Kanan)"
 
+
     def build( self ):
         rows = 5
         cols = 6
@@ -36,11 +37,32 @@ class PartialMeshTopo( Topo ):
         for r in range(rows):
             for c in range(cols):
                 curr = switches[(r, c)]
+
                 if c + 1 < cols:
-                    self.addLink(curr, switches[(r, c + 1)], bw=10, max_queue_size=100)
+                    self.addLink(
+                        curr,
+                        switches[(r, c + 1)],
+                        bw=15,
+                        delay='1ms',
+                        max_queue_size=150,
+                    )
+
                 if r + 1 < rows:
-                    self.addLink(curr, switches[(r + 1, c)], bw=10, max_queue_size=100)
+                    self.addLink(
+                        curr,
+                        switches[(r + 1, c)],
+                        bw=10,
+                        delay='1ms',
+                        max_queue_size=100,
+                    )
+
                 if r + 1 < rows and c + 1 < cols:
-                    self.addLink(curr, switches[(r + 1, c + 1)], bw=10, max_queue_size=100)
+                    self.addLink(
+                        curr,
+                        switches[(r + 1, c + 1)],
+                        bw=5,
+                        delay='1ms',
+                        max_queue_size=50,
+                    )
 
 topos = { 'mytopo': ( lambda: PartialMeshTopo() ) }
