@@ -81,9 +81,7 @@ DATASET = [
     ("h75", "10.0.0.89", 600, "UDP", "MICE"),
 ]
 
-# ──────────────────────────────────────────────────────────
 # BANDWIDTH PROFILE — identik dengan generate_traffic.sh
-# ──────────────────────────────────────────────────────────
 
 BW_PROFILES = {
     "light":  {"ELEPHANT": "2M",  "MEDIUM": "800K", "MICE": "200K"},

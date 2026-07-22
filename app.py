@@ -1,21 +1,3 @@
-"""
-app.py
-======
-Streamlit GUI sederhana untuk orchestrator eksperimen SDN.
-
-Cara pakai:
-    # Install streamlit jika belum ada
-    pip install streamlit
-
-    # Jalankan (perlu sudo untuk orchestrator)
-    sudo streamlit run app.py --server.port 8501
-
-Fitur:
-    1. Tab Eksperimen  — pilih skenario, jalankan, live log
-    2. Tab Analisis    — generate & tampilkan grafik
-    3. Tab Data        — tabel summary CSV hasil eksperimen
-"""
-
 import glob
 import os
 import subprocess
@@ -23,13 +5,10 @@ import sys
 import threading
 import time
 from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
-# ──────────────────────────────────────────────────────────
 # KONFIGURASI
-# ──────────────────────────────────────────────────────────
 
 RESULTS_DIR  = Path("./results")
 FIGURES_DIR  = Path("./figures")
@@ -39,9 +18,7 @@ LOAD_LEVELS   = ["light", "medium", "heavy"]
 
 LIVE_LOG.parent.mkdir(parents=True, exist_ok=True)
 
-# ──────────────────────────────────────────────────────────
 # PAGE CONFIG
-# ──────────────────────────────────────────────────────────
 
 st.set_page_config(
     page_title = "SDN TOPSIS Dashboard",
@@ -49,9 +26,33 @@ st.set_page_config(
     layout     = "wide",
 )
 
-# ──────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stMetricLabel"] > div,
+[data-testid="stCaptionContainer"] p,
+.stRadio label, .stCheckbox label,
+.stSelectbox label, .stMultiSelect label,
+.stNumberInput label, .stSlider label,
+.stTextArea label {
+    color: var(--text-color) !important;
+    opacity: 1 !important;
+}
+ 
+
+[data-testid="stTextArea"] textarea {
+    opacity: 1 !important;
+    color: var(--text-color) !important;
+    -webkit-text-fill-color: var(--text-color) !important;
+}
+[data-testid="stTextArea"] textarea:disabled {
+    opacity: 1 !important;
+    color: var(--text-color) !important;
+    -webkit-text-fill-color: var(--text-color) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # SESSION STATE INIT
-# ──────────────────────────────────────────────────────────
 
 if "proc_pid"    not in st.session_state:
     st.session_state.proc_pid    = None
@@ -64,9 +65,7 @@ if "log_content" not in st.session_state:
 if "was_running" not in st.session_state:
     st.session_state.was_running = False
 
-# ──────────────────────────────────────────────────────────
 # HELPER: CEK PROSES MASIH BERJALAN
-# ──────────────────────────────────────────────────────────
 
 def is_running() -> bool:
     pid = st.session_state.proc_pid
@@ -104,12 +103,10 @@ def count_completed_runs() -> dict:
             result[key] = done
     return result
 
-# ──────────────────────────────────────────────────────────
 # HEADER
-# ──────────────────────────────────────────────────────────
 
 st.markdown("""
-<h1 style='margin-bottom:0'>🌐 SDN TOPSIS Experiment</h1>
+<h1 style='margin-bottom:0'>SDN TOPSIS Experiment</h1>
 <p style='color:#888;margin-top:4px'>
     Implementasi TOPSIS untuk QoS-aware Routing pada SDN
 </p>
@@ -117,9 +114,7 @@ st.markdown("""
 
 st.divider()
 
-# ──────────────────────────────────────────────────────────
 # STATUS BAR
-# ──────────────────────────────────────────────────────────
 
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 
@@ -151,19 +146,15 @@ with col_s4:
 
 st.divider()
 
-# ──────────────────────────────────────────────────────────
 # TABS
-# ──────────────────────────────────────────────────────────
 
 tab_exp, tab_analysis, tab_data = st.tabs([
-    "🚀  Eksperimen",
-    "📊  Analisis & Grafik",
-    "📋  Data",
+    "Eksperimen",
+    "Analisis & Grafik",
+    "Data",
 ])
 
-# ══════════════════════════════════════════════════════════
 # TAB 1: EKSPERIMEN
-# ══════════════════════════════════════════════════════════
 
 with tab_exp:
 
@@ -203,7 +194,7 @@ with tab_exp:
 
     st.divider()
 
-    # ── Estimasi waktu ──────────────────────────────────
+    # Estimasi waktu
     est_per_run  = 17   # menit
     if mode == "Semua Skenario (3×3)":
         total_est = 9 * runs * est_per_run
@@ -213,17 +204,17 @@ with tab_exp:
     hrs  = total_est // 60
     mins = total_est % 60
     st.caption(
-        f"⏱ Estimasi waktu: **{hrs}j {mins}m** "
+        f"Estimasi waktu: **{hrs}j {mins}m** "
         f"({'9 skenario × ' if mode == 'Semua Skenario (3×3)' else ''}"
         f"{runs} run × ~{est_per_run} menit/run)"
     )
 
-    # ── Tombol kontrol ──────────────────────────────────
+    # Tombol kontrol
     col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 6])
 
     with col_btn1:
         start_clicked = st.button(
-            "▶  Jalankan",
+            "Jalankan",
             type="primary",
             disabled=is_running(),
             use_container_width=True,
@@ -231,19 +222,15 @@ with tab_exp:
 
     with col_btn2:
         stop_clicked = st.button(
-            "⏹  Stop",
+            "Stop",
             disabled=not is_running(),
             use_container_width=True,
         )
 
-    # ── Handle start ────────────────────────────────────
+    # Handle start
     if start_clicked and not is_running():
-        LIVE_LOG.write_text("")   # reset log
+        LIVE_LOG.write_text("")  
 
-        # Jalankan orchestrator.py langsung tanpa sudo
-        # karena app.py sudah dijalankan dengan:
-        #   sudo python3 -m streamlit run app.py
-        # Semua child process mewarisi privilege root dari parent.
         cmd = [sys.executable, "orchestrator.py"]
 
         if mode == "Semua Skenario (3×3)":
@@ -262,11 +249,8 @@ with tab_exp:
                 stdout  = log_fh,
                 stderr  = log_fh,
                 bufsize = 1,
-                # os.setsid: buat process group baru agar stop
-                # bisa kill seluruh grup sekaligus
                 preexec_fn = os.setsid,
             )
-            # Simpan PGID untuk kill group nanti
             import signal
             st.session_state.proc_pid  = proc.pid
             st.session_state.proc_pgid = os.getpgid(proc.pid)
@@ -278,7 +262,7 @@ with tab_exp:
             st.code(f"Command: {' '.join(cmd)}")
         st.rerun()
 
-    # ── Handle stop ─────────────────────────────────────
+    # Handle stop
     if stop_clicked and is_running():
         try:
             import signal
@@ -295,29 +279,25 @@ with tab_exp:
         st.warning("Orchestrator dihentikan.")
         st.rerun()
 
-    # ── Live log ─────────────────────────────────────────
+    # Live log
     st.subheader("Live Log")
 
-    # Auto-refresh: gunakan meta-refresh HTML sederhana
-    # karena st.rerun() di dalam loop menyebabkan infinite loop
-    # sebelum Streamlit selesai render halaman.
-    # Solusi: tombol manual refresh + info interval.
     col_log1, col_log2, col_log3, col_log4 = st.columns([2, 2, 2, 4])
     with col_log1:
-        refresh_clicked = st.button("🔄 Refresh Log",
+        refresh_clicked = st.button("Refresh Log",
                                     use_container_width=True)
     with col_log2:
-        if st.button("🗑 Bersihkan Log",
+        if st.button("Bersihkan Log",
                      use_container_width=True,
                      disabled=is_running()):
             LIVE_LOG.write_text("")
             st.rerun()
     with col_log3:
         if is_running():
-            st.info("⏳ Berjalan — refresh manual")
+            st.info("Berjalan — refresh manual")
         else:
             if st.session_state.get("was_running"):
-                st.success("✅ Selesai")
+                st.success("Selesai")
                 st.session_state.was_running = False
 
     # Update flag
@@ -342,13 +322,11 @@ with tab_exp:
                 mime="text/plain",
             )
 
-    # Auto-rerun ringan: hanya saat proses berjalan
-    # Pakai fragment agar tidak rerender seluruh halaman
     if is_running():
         time.sleep(3)
         st.rerun()
 
-    # ── Progress per skenario ────────────────────────────
+    # Progress per skenario
     st.subheader("Progress per Skenario")
     completed = count_completed_runs()
 
@@ -364,9 +342,7 @@ with tab_exp:
     st.dataframe(df_progress, use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════
 # TAB 2: ANALISIS & GRAFIK
-# ══════════════════════════════════════════════════════════
 
 with tab_analysis:
 
@@ -374,7 +350,7 @@ with tab_analysis:
 
     col_a1, col_a2 = st.columns([2, 8])
     with col_a1:
-        if st.button("🔄  Jalankan analyze.py",
+        if st.button("Jalankan analyze.py",
                      use_container_width=True,
                      disabled=is_running()):
             with st.spinner("Menjalankan analyze.py..."):
@@ -400,7 +376,7 @@ with tab_analysis:
 
     st.divider()
 
-    # ── Tampilkan grafik ────────────────────────────────
+    # Tampilkan grafik
     FIGURE_DEFS = [
         ("qos_combined.png",        "QoS Gabungan (Delay, Jitter, Loss, Bitrate)"),
         ("qos_delay.png",           "Delay"),
@@ -413,13 +389,11 @@ with tab_analysis:
     if not FIGURES_DIR.exists() or not any(FIGURES_DIR.glob("*.png")):
         st.info("Belum ada grafik. Klik 'Jalankan analyze.py' di atas.")
     else:
-        # Tampilkan combined figure full width dulu
         combined = FIGURES_DIR / "qos_combined.png"
         if combined.exists():
             st.image(str(combined), caption="QoS Gabungan", use_container_width=True)
             st.divider()
 
-        # Grafik individual dalam 2 kolom
         individual = [
             (FIGURES_DIR / fname, caption)
             for fname, caption in FIGURE_DEFS
@@ -445,15 +419,12 @@ with tab_analysis:
                                 )
 
 
-# ══════════════════════════════════════════════════════════
 # TAB 3: DATA
-# ══════════════════════════════════════════════════════════
 
 with tab_data:
 
     st.subheader("Data Hasil Eksperimen")
 
-    # ── Load semua summary.csv ───────────────────────────
     files = glob.glob(str(RESULTS_DIR / "*/*/run*/summary.csv"))
 
     if not files:
@@ -473,7 +444,6 @@ with tab_data:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # ── Filter ──────────────────────────────────────
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             f_routing = st.multiselect(
@@ -511,7 +481,7 @@ with tab_data:
             height=400,
         )
 
-        # ── Tabel agregat ────────────────────────────────
+        # Tabel agregat
         st.subheader("Rata-rata per Skenario")
 
         metrics = ["avg_delay_ms", "avg_jitter_ms",
@@ -524,12 +494,12 @@ with tab_data:
         )
         st.dataframe(agg, use_container_width=True)
 
-        # ── Download ─────────────────────────────────────
+        # Download
         col_d1, col_d2 = st.columns(2)
         with col_d1:
             csv_all = df_filtered.to_csv(index=False).encode()
             st.download_button(
-                "⬇ Download Data Lengkap (CSV)",
+                "Download Data Lengkap (CSV)",
                 csv_all,
                 file_name="results_all.csv",
                 mime="text/csv",
@@ -538,7 +508,7 @@ with tab_data:
         with col_d2:
             agg_csv = agg.to_csv().encode()
             st.download_button(
-                "⬇ Download Tabel Agregat (CSV)",
+                "Download Tabel Agregat (CSV)",
                 agg_csv,
                 file_name="results_aggregated.csv",
                 mime="text/csv",

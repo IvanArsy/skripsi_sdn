@@ -1,50 +1,48 @@
-import argparse
-import glob
-import os
-import warnings
+import argparse, glob, os, warnings
 from pathlib import Path
-
+ 
 import pandas as pd
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+import matplotlib.patches as mpatches
+from matplotlib.gridspec import GridSpec
+ 
 warnings.filterwarnings("ignore")
-
+ 
 ROUTING_ORDER = ["static", "sp", "topsis"]
 LOAD_ORDER    = ["light", "medium", "heavy"]
-
-LABELS = {
-    "static": "Static",
-    "sp":     "Shortest Path",
-    "topsis": "TOPSIS",
-}
-COLORS = {
-    "static": "#6c757d",
-    "sp":     "#0d6efd",
-    "topsis": "#198754",
-}
-
+ 
+LABELS = {"static": "Static", "sp": "Delay-based", "topsis": "TOPSIS"}
+COLORS = {"static": "#8C9BAB", "sp": "#4A7BBF", "topsis": "#3A9E6F"}
+HATCH  = {"static": "",        "sp": "///",       "topsis": "xxx"}
+ 
 plt.rcParams.update({
-    "font.size":      11,
-    "axes.titlesize": 12,
-    "axes.grid":      True,
-    "grid.alpha":     0.3,
-    "grid.linestyle": "--",
+    "font.family":       "serif",
+    "font.serif":        ["Times New Roman", "DejaVu Serif", "Georgia"],
+    "font.size":         10,
+    "axes.titlesize":    11,
+    "axes.labelsize":    10,
+    "xtick.labelsize":   9,
+    "ytick.labelsize":   9,
+    "legend.fontsize":   9,
+    "axes.grid":         True,
+    "grid.alpha":        0.25,
+    "grid.linestyle":    "--",
+    "grid.linewidth":    0.6,
+    "axes.linewidth":    0.8,
+    "axes.spines.top":   False,
+    "axes.spines.right": False,
+    "figure.dpi":        150,
 })
-
-
-def load_results(results_dir: str) -> pd.DataFrame:
-    pattern = os.path.join(results_dir, "*", "*", "run*", "summary.csv")
-    files   = glob.glob(pattern)
-
+ 
+ 
+# Data
+def load_results(results_dir):
+    files = glob.glob(os.path.join(results_dir, "*", "*", "run*", "summary.csv"))
     if not files:
-        raise FileNotFoundError(
-            f"Tidak ada summary.csv di {results_dir}\n"
-            "Pastikan eksperimen sudah dijalankan."
-        )
-
+        raise FileNotFoundError(f"Tidak ada summary.csv di {results_dir}")
     print(f"Ditemukan {len(files)} file summary.csv")
     dfs = []
     for f in files:
@@ -52,285 +50,273 @@ def load_results(results_dir: str) -> pd.DataFrame:
             dfs.append(pd.read_csv(f))
         except Exception as e:
             print(f"  [WARN] {f}: {e}")
-
     df = pd.concat(dfs, ignore_index=True)
-
-    for col in ["avg_delay_ms", "avg_jitter_ms", "loss_pct",
-                "avg_bitrate_kbps", "pkts_sent", "pkts_recv"]:
+    for col in ["avg_delay_ms","avg_jitter_ms","loss_pct","avg_bitrate_kbps"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
     print(f"Total baris: {len(df)}")
-    print(f"Routing    : {sorted(df['routing'].unique())}")
-    print(f"Load       : {sorted(df['load'].unique())}")
-    print(f"Run IDs    : {sorted(df['run_id'].unique())}")
     return df
-
-
-def compute_averages(df: pd.DataFrame) -> pd.DataFrame:
-    metrics = ["avg_delay_ms", "avg_jitter_ms", "loss_pct", "avg_bitrate_kbps"]
-
-    agg = (
-        df.groupby(["routing", "load"])[metrics]
-        .agg(["mean", "std"])
-        .reset_index()
-    )
-    agg.columns = [
-        "_".join(c).strip("_") if c[1] else c[0]
-        for c in agg.columns
-    ]
+ 
+ 
+def compute_averages(df):
+    metrics = ["avg_delay_ms","avg_jitter_ms","loss_pct","avg_bitrate_kbps"]
+    agg = df.groupby(["routing","load"])[metrics].agg(["mean","std"]).reset_index()
+    agg.columns = ["_".join(c).strip("_") if c[1] else c[0] for c in agg.columns]
     return agg
-
-def _bar_chart(agg, mean_col, std_col, ylabel, title, out_path,
-               lower_is_better=True):
-    loads    = [l for l in LOAD_ORDER    if l in agg["load"].unique()]
-    routings = [r for r in ROUTING_ORDER if r in agg["routing"].unique()]
-
-    x      = np.arange(len(loads))
-    n      = len(routings)
-    width  = 0.22
-    offset = np.linspace(-(n-1)/2, (n-1)/2, n) * width
-
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-
-    for i, routing in enumerate(routings):
-        sub = agg[agg["routing"] == routing].set_index("load")
-
-        means = [sub.loc[l, mean_col] if l in sub.index else np.nan
-                 for l in loads]
-        stds  = [sub.loc[l, std_col]
-                 if l in sub.index and not pd.isna(sub.loc[l, std_col])
-                 else 0 for l in loads]
-
-        bars = ax.bar(
-            x + offset[i], means, width,
-            yerr=stds, label=LABELS.get(routing, routing),
-            color=COLORS.get(routing, "#555"),
-            alpha=0.85, capsize=4,
-            error_kw={"elinewidth": 1.2, "ecolor": "#333"},
-        )
-
-        for bar, m in zip(bars, means):
-            if not np.isnan(m):
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() * 1.02,
-                        f"{m:.2f}",
-                        ha="center", va="bottom", fontsize=8)
-
-    y_top = ax.get_ylim()[1]
-    for li, load in enumerate(loads):
-        sub = agg[agg["load"] == load].set_index("routing")
-        valid = {r: sub.loc[r, mean_col]
-                 for r in routings
-                 if r in sub.index and not pd.isna(sub.loc[r, mean_col])}
-        if not valid:
-            continue
-        best = min(valid, key=valid.get) if lower_is_better \
-               else max(valid, key=valid.get)
-        bi   = routings.index(best)
-        ax.text(li + offset[bi], y_top * 0.97, "★",
-                ha="center", va="top", fontsize=12,
-                color=COLORS.get(best, "#333"))
-
-    ax.set_xticks(x)
-    ax.set_xticklabels([l.capitalize() for l in loads])
-    ax.set_xlabel("Kondisi Beban Jaringan")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.legend(loc="upper left", framealpha=0.85)
-    ax.annotate("★ = nilai terbaik", xy=(0.99, 0.01),
-                xycoords="axes fraction", ha="right",
-                va="bottom", fontsize=8, color="#666")
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"  {out_path}")
-
-
-def plot_combined(agg: pd.DataFrame, out_path: str):
-    configs = [
-        ("avg_delay_ms_mean",     "avg_delay_ms_std",     "Delay (ms)",      "Rata-rata Delay",       True),
-        ("avg_jitter_ms_mean",    "avg_jitter_ms_std",    "Jitter (ms)",     "Rata-rata Jitter",      True),
-        ("loss_pct_mean",         "loss_pct_std",         "Packet Loss (%)", "Rata-rata Packet Loss", True),
-        ("avg_bitrate_kbps_mean", "avg_bitrate_kbps_std", "Bitrate (Kbps)",  "Rata-rata Bitrate",     False),
+ 
+ 
+# Panel
+def _legend_patches(routings):
+    return [
+        mpatches.Patch(facecolor=COLORS[r], hatch=HATCH[r],
+                       edgecolor="#555", linewidth=0.4, label=LABELS[r])
+        for r in routings
     ]
-
+ 
+ 
+def _draw_panel(ax, agg, mean_col, ylabel, title, show_xlabel=True):
     loads    = [l for l in LOAD_ORDER    if l in agg["load"].unique()]
     routings = [r for r in ROUTING_ORDER if r in agg["routing"].unique()]
     x        = np.arange(len(loads))
     n        = len(routings)
-    width    = 0.22
-    offset   = np.linspace(-(n-1)/2, (n-1)/2, n) * width
-
-    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
-    fig.suptitle(
-        "Perbandingan QoS: Static vs Shortest Path vs TOPSIS",
-        fontsize=13, fontweight="bold",
-    )
-
-    for ax, (mc, sc, ylabel, subtitle, _lib) in zip(axes.flat, configs):
-        for i, routing in enumerate(routings):
-            sub   = agg[agg["routing"] == routing].set_index("load")
-            means = [sub.loc[l, mc] if l in sub.index else np.nan for l in loads]
-            stds  = [sub.loc[l, sc]
-                     if l in sub.index and not pd.isna(sub.loc[l, sc])
-                     else 0 for l in loads]
-            ax.bar(x + offset[i], means, width, yerr=stds,
-                   label=LABELS.get(routing, routing),
-                   color=COLORS.get(routing, "#555"),
-                   alpha=0.85, capsize=3,
-                   error_kw={"elinewidth": 1.0, "ecolor": "#333"})
-
-        ax.set_xticks(x)
-        ax.set_xticklabels([l.capitalize() for l in loads])
-        ax.set_ylabel(ylabel)
-        ax.set_title(subtitle)
-        ax.legend(fontsize=8, loc="upper left")
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    width    = 0.24
+    offsets  = np.linspace(-(n-1)/2, (n-1)/2, n) * width
+ 
+    for i, routing in enumerate(routings):
+        sub   = agg[agg["routing"] == routing].set_index("load")
+        means = [sub.loc[l, mean_col] if l in sub.index else np.nan for l in loads]
+ 
+        bars = ax.bar(
+            x + offsets[i], means, width,
+            label=LABELS.get(routing, routing),
+            color=COLORS.get(routing, "#888"),
+            hatch=HATCH.get(routing, ""),
+            alpha=0.90,
+            linewidth=0.6,
+            edgecolor="white",
+        )
+ 
+        for bar, m in zip(bars, means):
+            if not np.isnan(m):
+                ax._pending_labels = getattr(ax, "_pending_labels", [])
+                ax._pending_labels.append((bar, m))
+ 
+    current_max = agg[mean_col].max()
+    ax.set_ylim(0, current_max * 1.30)
+ 
+    for bar, m in getattr(ax, "_pending_labels", []):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + current_max * 0.02,
+            f"{m:.2f}",
+            ha="center", va="bottom", fontsize=7.5, color="#333",
+        )
+    ax._pending_labels = []
+ 
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Light", "Medium", "Heavy"])
+    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontweight="bold", pad=8)
+    if show_xlabel:
+        ax.set_xlabel("Network Load Condition")
+    ax.yaxis.set_tick_params(length=3)
+    ax.xaxis.set_tick_params(length=3)
+ 
+ 
+# Grafik individual
+def plot_single(agg, mean_col, ylabel, title, out_path):
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
+    _draw_panel(ax, agg, mean_col, ylabel, title, show_xlabel=True)
+ 
+    routings = [r for r in ROUTING_ORDER if r in agg["routing"].unique()]
+    # Legend di dalam panel, pojok kanan atas — jauh dari bar (bar tumbuh dari kiri)
+    ax.legend(handles=_legend_patches(routings),
+              loc="upper right", framealpha=0.9, edgecolor="#ccc",
+              borderpad=0.6, handlelength=1.4, fontsize=9)
+ 
+    fig.tight_layout(pad=1.8)
+    fig.savefig(out_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close()
-    print(f"  {out_path}")
-
-
-def plot_cpu(results_dir: str, out_path: str):
-    pattern = os.path.join(
-        results_dir, "*", "*", "run*", "controller_resource.csv"
+    print(f"  Tersimpan: {out_path}")
+ 
+ 
+# Grafik 2×2 combined
+def plot_combined(agg, out_path):
+    configs = [
+        ("avg_delay_ms_mean",     "Delay (ms)",        "End-to-End Delay"),
+        ("avg_jitter_ms_mean",    "Jitter (ms)",       "Jitter"),
+        ("loss_pct_mean",         "Packet Loss (%)",   "Packet Loss"),
+        ("avg_bitrate_kbps_mean", "Throughput (Kbps)", "Throughput"),
+    ]
+ 
+    # Ruang bawah untuk legend
+    fig = plt.figure(figsize=(12, 9.5))
+    fig.suptitle(
+        "QoS Comparison: Static vs Delay-based vs TOPSIS Routing",
+        fontsize=13, fontweight="bold", y=0.97,
     )
-    files = glob.glob(pattern)
+ 
+    gs = GridSpec(2, 2, figure=fig,
+                  hspace=0.45, wspace=0.33,
+                  top=0.91, bottom=0.12)
+ 
+    for idx, (mc, ylabel, subtitle) in enumerate(configs):
+        ax = fig.add_subplot(gs[idx // 2, idx % 2])
+        _draw_panel(ax, agg, mc, ylabel, subtitle, show_xlabel=(idx >= 2))
+ 
+    # Legend bersama — di bawah panel, di atas batas figure
+    routings = [r for r in ROUTING_ORDER if r in agg["routing"].unique()]
+    fig.legend(
+        handles=_legend_patches(routings),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=len(routings),
+        framealpha=0.9, edgecolor="#ccc",
+        fontsize=10, borderpad=0.7, handlelength=1.8,
+        title="Routing Method", title_fontsize=10,
+    )
+ 
+    fig.savefig(out_path, dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close()
+    print(f"  Tersimpan: {out_path}")
+ 
+ 
+# CPU/Memory
+def plot_cpu(results_dir, out_path):
+    files = glob.glob(os.path.join(results_dir, "*","*","run*","controller_resource.csv"))
     if not files:
-        print("  [WARN] controller_resource.csv tidak ditemukan, grafik CPU dilewati.")
+        print("  [INFO] controller_resource.csv tidak ditemukan — dilewati.")
         return
-
+ 
     rows = []
     for f in files:
         parts = Path(f).parts
         try:
-            routing = parts[-4]
-            load    = parts[-3]
-            run_id  = parts[-2]
-            df_r    = pd.read_csv(f)
-            avg_cpu = pd.to_numeric(df_r["cpu_pct"], errors="coerce").mean()
-            avg_mem = pd.to_numeric(df_r["mem_rss_mb"], errors="coerce").mean()
-            rows.append({"routing": routing, "load": load,
-                         "avg_cpu": avg_cpu, "avg_mem_mb": avg_mem})
+            df_r = pd.read_csv(f)
+            rows.append({
+                "routing": parts[-4], "load": parts[-3],
+                "avg_cpu": pd.to_numeric(df_r["cpu_pct"],    errors="coerce").mean(),
+                "avg_mem": pd.to_numeric(df_r["mem_rss_mb"], errors="coerce").mean(),
+            })
         except Exception:
             continue
-
     if not rows:
         return
+    
+    df_summary = pd.DataFrame(rows)
+    summary = (
+        df_summary
+        .groupby(["routing", "load"])
+        .agg({
+            "avg_cpu": ["mean", "std"],
+            "avg_mem": ["mean", "std"],
+        })
+        .round(2)
+    )
 
-    df_cpu = pd.DataFrame(rows)
-    agg_cpu = df_cpu.groupby(["routing", "load"])[["avg_cpu", "avg_mem_mb"]]\
-                    .mean().reset_index()
+    out_dir = Path(out_path).parent
 
+    summary.to_csv(
+        out_dir / "controller_resource_summary.csv",
+        index=True
+    )
+ 
+    agg_cpu  = pd.DataFrame(rows).groupby(["routing","load"])[["avg_cpu","avg_mem"]].mean().reset_index()
     loads    = [l for l in LOAD_ORDER    if l in agg_cpu["load"].unique()]
     routings = [r for r in ROUTING_ORDER if r in agg_cpu["routing"].unique()]
     x        = np.arange(len(loads))
     n        = len(routings)
-    width    = 0.22
-    offset   = np.linspace(-(n-1)/2, (n-1)/2, n) * width
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
-    fig.suptitle("Resource Controller: CPU & Memory", fontsize=12)
-
+    width    = 0.24
+    offsets  = np.linspace(-(n-1)/2, (n-1)/2, n) * width
+ 
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig.suptitle("SDN Controller Resource Utilization", fontsize=12, fontweight="bold")
+ 
     for col, ax, label, title in [
-        ("avg_cpu",    axes[0], "CPU (%)",  "Rata-rata CPU Controller"),
-        ("avg_mem_mb", axes[1], "RAM (MB)", "Rata-rata Memory Controller"),
+        ("avg_cpu", axes[0], "CPU Usage (%)",    "CPU Utilization"),
+        ("avg_mem", axes[1], "Memory Usage (MB)","Memory Utilization"),
     ]:
         for i, routing in enumerate(routings):
             sub  = agg_cpu[agg_cpu["routing"] == routing].set_index("load")
             vals = [sub.loc[l, col] if l in sub.index else np.nan for l in loads]
-            ax.bar(x + offset[i], vals, width,
+            ax.bar(x + offsets[i], vals, width,
                    label=LABELS.get(routing, routing),
-                   color=COLORS.get(routing, "#555"), alpha=0.85)
-        ax.set_xticks(x)
-        ax.set_xticklabels([l.capitalize() for l in loads])
-        ax.set_xlabel("Kondisi Beban")
-        ax.set_ylabel(label)
-        ax.set_title(title)
-        ax.legend(fontsize=8)
-
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+                   color=COLORS.get(routing, "#888"),
+                   hatch=HATCH.get(routing, ""),
+                   alpha=0.90, linewidth=0.6, edgecolor="white")
+        ax.set_xticks(x); ax.set_xticklabels(["Light","Medium","Heavy"])
+        ax.set_xlabel("Network Load Condition")
+        ax.set_ylabel(label); ax.set_title(title, fontweight="bold")
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+ 
+    fig.legend(handles=_legend_patches(routings),
+               loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.04),
+               framealpha=0.9, fontsize=9, edgecolor="#ccc")
+    fig.tight_layout(pad=1.5)
+    fig.savefig(out_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close()
-    print(f"  {out_path}")
-
-
-def export_table(agg: pd.DataFrame, out_path: str):
+    print(f"  Tersimpan: {out_path}")
+ 
+ 
+# Tabel
+def export_table(agg, out_path):
     rows = []
     for routing in ROUTING_ORDER:
         for load in LOAD_ORDER:
             sub = agg[(agg["routing"] == routing) & (agg["load"] == load)]
-            if sub.empty:
-                continue
+            if sub.empty: continue
             r = sub.iloc[0]
-
-            def fmt(mc, sc, d=3):
+            def fmt(mc, sc, d=2):
                 m, s = r.get(mc, np.nan), r.get(sc, np.nan)
-                if pd.isna(m):
-                    return "N/A"
-                return f"{m:.{d}f} ± {s:.{d}f}" if not pd.isna(s) and s > 0 \
-                       else f"{m:.{d}f}"
-
+                if pd.isna(m): return "N/A"
+                return f"{m:.{d}f} ± {s:.{d}f}" if not pd.isna(s) and s > 0 else f"{m:.{d}f}"
             rows.append({
-                "Routing":        LABELS.get(routing, routing),
-                "Load":           load.capitalize(),
-                "Delay (ms)":     fmt("avg_delay_ms_mean",     "avg_delay_ms_std"),
-                "Jitter (ms)":    fmt("avg_jitter_ms_mean",    "avg_jitter_ms_std"),
-                "Loss (%)":       fmt("loss_pct_mean",         "loss_pct_std", 4),
-                "Bitrate (Kbps)": fmt("avg_bitrate_kbps_mean", "avg_bitrate_kbps_std", 2),
+                "Routing Method":    LABELS.get(routing, routing),
+                "Load":              load.capitalize(),
+                "Delay (ms)":        fmt("avg_delay_ms_mean",     "avg_delay_ms_std"),
+                "Jitter (ms)":       fmt("avg_jitter_ms_mean",    "avg_jitter_ms_std"),
+                "Packet Loss (%)":   fmt("loss_pct_mean",         "loss_pct_std", 3),
+                "Throughput (Kbps)": fmt("avg_bitrate_kbps_mean", "avg_bitrate_kbps_std", 1),
             })
-
     tbl = pd.DataFrame(rows)
     tbl.to_csv(out_path, index=False)
-    print(f"  {out_path}")
-    print()
+    print(f"  Tersimpan: {out_path}\n")
     print(tbl.to_string(index=False))
-
-
+    return tbl
+ 
+ 
+# Main
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", default="./results")
     parser.add_argument("--out",     default="./figures")
     args = parser.parse_args()
-
     os.makedirs(args.out, exist_ok=True)
-
-    print("=" * 50)
-    print("  Analisis Hasil Eksperimen SDN")
-    print("=" * 50)
-
+ 
+    print("=" * 55)
+    print("  Analisis QoS SDN — Format Skripsi")
+    print("=" * 55)
+ 
     df  = load_results(args.results)
     agg = compute_averages(df)
-
-    print("\nMembuat grafik...")
-
-    _bar_chart(agg, "avg_delay_ms_mean",     "avg_delay_ms_std",
-               "Delay (ms)",      "Rata-rata Delay",
-               f"{args.out}/qos_delay.png",   lower_is_better=True)
-
-    _bar_chart(agg, "avg_jitter_ms_mean",    "avg_jitter_ms_std",
-               "Jitter (ms)",     "Rata-rata Jitter",
-               f"{args.out}/qos_jitter.png",  lower_is_better=True)
-
-    _bar_chart(agg, "loss_pct_mean",         "loss_pct_std",
-               "Packet Loss (%)", "Rata-rata Packet Loss",
-               f"{args.out}/qos_loss.png",    lower_is_better=True)
-
-    _bar_chart(agg, "avg_bitrate_kbps_mean", "avg_bitrate_kbps_std",
-               "Bitrate (Kbps)",  "Rata-rata Bitrate",
-               f"{args.out}/qos_bitrate.png", lower_is_better=False)
-
+ 
+    print("\nMembuat grafik individual …")
+    plot_single(agg, "avg_delay_ms_mean",     "End-to-End Delay (ms)", "End-to-End Delay",    f"{args.out}/qos_delay.png")
+    plot_single(agg, "avg_jitter_ms_mean",    "Jitter (ms)",           "Jitter",              f"{args.out}/qos_jitter.png")
+    plot_single(agg, "loss_pct_mean",         "Packet Loss (%)",       "Packet Loss",         f"{args.out}/qos_loss.png")
+    plot_single(agg, "avg_bitrate_kbps_mean", "Throughput (Kbps)",     "Throughput",          f"{args.out}/qos_throughput.png")
+ 
+    print("\nMembuat grafik gabungan …")
     plot_combined(agg, f"{args.out}/qos_combined.png")
+ 
+    print("\nMembuat grafik resource controller …")
     plot_cpu(args.results, f"{args.out}/controller_resource.png")
-
-    print("\nEkspor tabel agregat...")
+ 
+    print("\nEkspor tabel …")
     export_table(agg, f"{args.out}/summary_table.csv")
-
-    print(f"\nSelesai. Output: {args.out}/")
-
-
+ 
+    print(f"\n✓ Selesai. Output di: {args.out}/")
+ 
+ 
 if __name__ == "__main__":
     main()

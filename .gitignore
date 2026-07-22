@@ -5,6 +5,9 @@ __pycache__/
 *.json
 *.txt
 
+/old
+
+/figures2
 venv/
 .env
 
