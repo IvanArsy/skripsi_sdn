@@ -12,7 +12,7 @@ class ShortestPathController(BaseRoutingController):
                 self.net,
                 src,
                 dst,
-                weight=None,
+                weight="delay",
             )
             return path, []
 
